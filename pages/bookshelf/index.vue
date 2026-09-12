@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="w-full h-full min-h-full relative">
     <div v-if="attemptingConnection" class="w-full pt-4 flex items-center justify-center">
       <widgets-loading-spinner />
@@ -62,6 +62,7 @@ export default {
           this.isFirstNetworkConnection = false
           console.log(`[categories] networkConnected true first network connection. lastServerFetch=${this.lastServerFetch}`)
           this.fetchCategories()
+    this.loadUserNotes()
           return
         }
 
@@ -69,10 +70,12 @@ export default {
           // Using timeout because making this fetch as soon as network gets connected will often fail on Android
           console.log(`[categories] networkConnected true so fetching categories. lastServerFetch=${this.lastServerFetch}`)
           this.fetchCategories()
+    this.loadUserNotes()
         }, 4000)
       } else {
         console.log(`[categories] networkConnected false so fetching categories`)
         this.fetchCategories()
+    this.loadUserNotes()
       }
     }
   },
@@ -278,12 +281,14 @@ export default {
       if (this.currentLibraryId) {
         console.log(`[categories] libraryChanged so fetching categories`)
         this.fetchCategories()
+    this.loadUserNotes()
       }
     },
     audiobookAdded(audiobook) {
       // TODO: Check if audiobook would be on this shelf
       if (!this.search) {
         this.fetchCategories()
+    this.loadUserNotes()
       }
     },
     audiobookUpdated(audiobook) {
@@ -336,6 +341,7 @@ export default {
     await this.$store.dispatch('globals/loadLocalMediaProgress')
     console.log(`[categories] mounted so fetching categories`)
     this.fetchCategories()
+    this.loadUserNotes()
   },
   beforeDestroy() {
     this.removeListeners()

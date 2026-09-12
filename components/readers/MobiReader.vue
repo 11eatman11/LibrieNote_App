@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="mobi-ebook-viewer w-full relative">
     <div class="absolute overflow-hidden left-0 top-0 w-screen max-w-screen m-auto z-10 border border-black border-opacity-20 shadow-md bg-white">
       <iframe title="html-viewer" class="w-full overflow-hidden"> Loading </iframe>
@@ -10,6 +10,7 @@
 import MobiParser from '@/assets/ebooks/mobi.js'
 import HtmlParser from '@/assets/ebooks/htmlParser.js'
 import defaultCss from '@/assets/ebooks/basic.js'
+import NoteStudioOverlay from '@/components/notes/NoteStudioOverlay.vue'
 
 export default {
   props: {
@@ -23,6 +24,14 @@ export default {
     return {}
   },
   computed: {
+    libraryItemId() {
+      return this.libraryItem?.id || 'mobi-doc'
+    },
+    isNotesEnabled() {
+      const libId = this.libraryItem?.libraryId || (this..state.selectedLibraryItem && this..state.selectedLibraryItem.libraryId)
+      if (!libId) return true
+      return this..getters['libraries/isLibraryNotesEnabled'](libId)
+    },
     userToken() {
       return this.$store.getters['user/getToken']
     }

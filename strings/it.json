@@ -349,5 +349,9 @@
   "ToastPodcastCreateSuccess": "Podcast creato correttamente",
   "ToastRSSFeedCloseFailed": "Errore chiusura flusso RSS",
   "ToastRSSFeedCloseSuccess": "Flusso RSS chiuso",
-  "ToastStreamingNotAllowedOnCellular": "Lo streaming non è consentito sui dati mobili"
+  "ToastStreamingNotAllowedOnCellular": "Lo streaming non è consentito sui dati mobili",
+  "LabelSettingsEnableNotes": "Abilita Funzioni Note e Sottolineatura",
+  "LabelSettingsEnableNotesHelp": "Se abilitato, attiva lo Studio Note, evidenziatore, taccuini e annotazioni digitali per i libri di questa biblioteca. Se disabilitato, le note non saranno disponibili n? visibili.",
+  "HeaderNotes": "Note & Studio Digitale",
+  "TabNotes": "Note"
 }

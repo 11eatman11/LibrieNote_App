@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="w-full h-full relative">
     <div v-show="canGoPrev" class="absolute top-0 left-0 h-full w-1/2 hover:opacity-100 opacity-0 z-10 cursor-pointer" @click.stop.prevent="prev" @mousedown.prevent>
       <div class="flex items-center justify-center h-full w-1/2">
@@ -12,9 +12,13 @@
     </div>
 
     <div class="h-full flex items-center justify-center">
-      <div :style="{ width: pdfWidth + 'px', height: pdfHeight + 'px' }" class="w-full h-full overflow-auto">
+      <div :style="{ width: pdfWidth + 'px', height: pdfHeight + 'px' }" class="w-full h-full overflow-auto relative">
         <div v-if="loadedRatio > 0 && loadedRatio < 1" style="background-color: green; color: white; text-align: center" :style="{ width: loadedRatio * 100 + '%' }">{{ Math.floor(loadedRatio * 100) }}%</div>
-        <pdf v-if="pdfDocInitParams" ref="pdf" class="m-auto z-10 border border-black border-opacity-20 shadow-md bg-white" :src="pdfDocInitParams" :page="page" :rotate="rotate" @progress="loadedRatio = $event" @error="error" @num-pages="numPagesLoaded" @link-clicked="page = $event" @loaded="loadedEvt"></pdf>
+        <div class="relative m-auto" :style="{ width: pdfWidth + 'px' }">
+          <pdf v-if="pdfDocInitParams" ref="pdf" class="m-auto z-10 border border-black border-opacity-20 shadow-md bg-white" :src="pdfDocInitParams" :page="page" :rotate="rotate" @progress="loadedRatio = $event" @error="error" @num-pages="numPagesLoaded" @link-clicked="page = $event" @loaded="loadedEvt"></pdf>
+          <!-- Studio Note Digitale ancorato alla pagina PDF -->
+          <note-studio-overlay :active="isNotesEnabled && isNoteStudioActive" :item-id="libraryItemId" :page-key="page" />
+        </div>
       </div>
     </div>
 
@@ -27,10 +31,12 @@
 
 <script>
 import pdf from '@teckel/vue-pdf'
+import NoteStudioOverlay from '@/components/notes/NoteStudioOverlay.vue'
 
 export default {
   components: {
-    pdf
+    pdf,
+    NoteStudioOverlay
   },
   props: {
     url: String,
@@ -39,7 +45,11 @@ export default {
       default: () => {}
     },
     isLocal: Boolean,
-    keepProgress: Boolean
+    keepProgress: Boolean,
+    isNoteStudioActive: {
+      type: Boolean,
+      default: true
+    }
   },
   data() {
     return {
@@ -71,6 +81,14 @@ export default {
         return this.libraryItem.libraryItemId
       }
       return null
+    },
+    libraryItemId() {
+      return this.libraryItem?.id || this.localLibraryItemId || this.serverLibraryItemId || 'pdf-doc'
+    },
+    isNotesEnabled() {
+      const libId = this.libraryItem?.libraryId || (this.$store.state.selectedLibraryItem && this.$store.state.selectedLibraryItem.libraryId)
+      if (!libId) return true
+      return this.$store.getters['libraries/isLibraryNotesEnabled'](libId)
     },
     pdfWidth() {
       if (this.windowWidth > this.windowHeight) {

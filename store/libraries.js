@@ -1,4 +1,4 @@
-const { BookCoverAspectRatio } = require('../plugins/constants')
+﻿const { BookCoverAspectRatio } = require('../plugins/constants')
 
 export const state = () => ({
   libraries: [],
@@ -30,6 +30,16 @@ export const getters = {
   },
   getLibraryIsAudiobooksOnly: (state, getters) => {
     return !!getters.getCurrentLibrarySettings?.audiobooksOnly
+  },
+  getLibraryNotesEnabled: (state, getters) => {
+    if (!getters.getCurrentLibrarySettings) return true
+    return getters.getCurrentLibrarySettings.enableNotes !== false
+  },
+  isLibraryNotesEnabled: (state) => (libraryId) => {
+    if (!libraryId) return true
+    const lib = state.libraries.find((l) => l.id === libraryId)
+    if (!lib || !lib.settings) return true
+    return lib.settings.enableNotes !== false
   }
 }
 

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div id="epub-frame" class="w-full">
     <div id="viewer" class="h-full w-full"></div>
 
@@ -12,6 +12,7 @@
 
 <script>
 import ePub from 'epubjs'
+import NoteStudioOverlay from '@/components/notes/NoteStudioOverlay.vue'
 
 export default {
   props: {

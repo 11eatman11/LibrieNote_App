@@ -349,5 +349,9 @@
   "ToastPodcastCreateSuccess": "Podcast created successfully",
   "ToastRSSFeedCloseFailed": "Failed to close RSS feed",
   "ToastRSSFeedCloseSuccess": "RSS feed closed",
-  "ToastStreamingNotAllowedOnCellular": "Streaming is not allowed on cellular data"
+  "ToastStreamingNotAllowedOnCellular": "Streaming is not allowed on cellular data",
+  "LabelSettingsEnableNotes": "Enable Notes & Annotations",
+  "LabelSettingsEnableNotesHelp": "When enabled, activates Note Studio, highlighter, notebooks and digital annotations for items in this library. When disabled, notes are hidden and unavailable.",
+  "HeaderNotes": "Notes & Studio",
+  "TabNotes": "Notes"
 }

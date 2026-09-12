@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div id="comic-reader" class="w-full h-full relative">
     <modals-modal v-model="showInfoMenu" height="90%">
       <div class="w-full h-full overflow-hidden absolute top-0 left-0 flex items-center justify-center" @click.stop="showInfoMenu = false">
@@ -34,6 +34,7 @@
 
 <script>
 import Path from 'path'
+import NoteStudioOverlay from '@/components/notes/NoteStudioOverlay.vue'
 import { Archive } from 'libarchive.js/main.js'
 import { CompressedFile } from 'libarchive.js/src/compressed-file'
 
@@ -77,6 +78,14 @@ export default {
     }
   },
   computed: {
+    libraryItemId() {
+      return this.libraryItem?.id || 'comic-doc'
+    },
+    isNotesEnabled() {
+      const libId = this.libraryItem?.libraryId || (this..state.selectedLibraryItem && this..state.selectedLibraryItem.libraryId)
+      if (!libId) return true
+      return this..getters['libraries/isLibraryNotesEnabled'](libId)
+    },
     userToken() {
       return this.$store.getters['user/getToken']
     },
