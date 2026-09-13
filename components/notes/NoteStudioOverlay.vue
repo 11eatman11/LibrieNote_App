@@ -381,9 +381,9 @@ export default {
 
       if (this.currentStroke) {
         if (this.currentStroke.straightLine) {
-          // Snap alla linea orizzontale
+          // Linea retta diretta in qualsiasi direzione (orizzontale, verticale, diagonale)
           const start = this.currentStroke.points[0]
-          this.currentStroke.points = [start, { x: pos.x, y: start.y }]
+          this.currentStroke.points = [start, { x: pos.x, y: pos.y }]
         } else {
           this.currentStroke.points.push(pos)
         }
