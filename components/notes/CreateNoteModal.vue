@@ -389,6 +389,10 @@ export default {
 
       if (note) {
         this.$toast?.success('Nota creata con successo!')
+        const client = this.$nativeHttp || this.$axios
+        if (client && this.userId) {
+          noteStorage.syncWithServer(this.userId, client)
+        }
         this.$emit('created', note)
         this.close()
       } else {

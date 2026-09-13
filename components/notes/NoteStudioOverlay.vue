@@ -505,6 +505,16 @@ export default {
         sheetStyle: this.sheetStyle
       }
       await noteStorage.savePageNotes(this.itemId, this.pageKey, data)
+      this.triggerDebouncedSync()
+    },
+    triggerDebouncedSync() {
+      if (this._syncTimer) clearTimeout(this._syncTimer)
+      this._syncTimer = setTimeout(() => {
+        const client = this.$nativeHttp || this.$axios
+        if (client && this.userId) {
+          noteStorage.syncWithServer(this.userId, client)
+        }
+      }, 2500)
     },
     async loadCurrentPageData() {
       const data = await noteStorage.loadPageNotes(this.itemId, this.pageKey)

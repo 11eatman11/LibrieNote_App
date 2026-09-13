@@ -9,10 +9,11 @@
 
 const STORAGE_KEY_SETTINGS = 'librie_note_tool_settings'
 const DB_NAME = 'LibrieNoteStudioDB'
-const DB_VERSION = 2
+const DB_VERSION = 3
 const STORE_NOTES = 'notes'
 const STORE_NOTEBOOKS = 'user_notebooks'
 const STORE_FOLDERS = 'user_folders'
+const STORE_TOMBSTONES = 'user_tombstones'
 
 export const DEFAULT_TOOL_SETTINGS = {
   activeTool: 'cursor', // Default cursore per navigazione e link
@@ -54,7 +55,7 @@ export const DEFAULT_TOOL_SETTINGS = {
 }
 
 /**
- * Inizializzazione database IndexedDB con supporto a taccuini e cartelle
+ * Inizializzazione database IndexedDB con supporto a taccuini, cartelle e sincronizzazione
  */
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -77,6 +78,10 @@ function openDB() {
         const fStore = db.createObjectStore(STORE_FOLDERS, { keyPath: 'id' })
         fStore.createIndex('userId', 'userId', { unique: false })
         fStore.createIndex('parentId', 'parentId', { unique: false })
+      }
+      if (!db.objectStoreNames.contains(STORE_TOMBSTONES)) {
+        const tStore = db.createObjectStore(STORE_TOMBSTONES, { keyPath: 'id' })
+        tStore.createIndex('userId', 'userId', { unique: false })
       }
     }
     request.onsuccess = () => resolve(request.result)
@@ -293,6 +298,7 @@ export const noteStorage = {
   async deleteNotebook(userId, noteId) {
     if (!userId || !noteId) return false
     try {
+      await this.recordTombstone(userId, 'notebook', noteId)
       const db = await openDB()
       if (!db) {
         const list = await this.getUserNotebooks(userId)
@@ -361,7 +367,8 @@ export const noteStorage = {
       userId,
       name: name.trim(),
       parentId: parentId || null,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      updatedAt: Date.now()
     }
 
     try {
@@ -398,6 +405,7 @@ export const noteStorage = {
         if (fld) {
           if (name !== undefined) fld.name = name.trim()
           if (parentId !== undefined) fld.parentId = parentId
+          fld.updatedAt = Date.now()
           localStorage.setItem(`folders_${userId}`, JSON.stringify(list))
           return true
         }
@@ -412,6 +420,7 @@ export const noteStorage = {
           if (item && item.userId === userId) {
             if (name !== undefined) item.name = name.trim()
             if (parentId !== undefined) item.parentId = parentId
+            item.updatedAt = Date.now()
             store.put(item)
             resolve(true)
           } else {
@@ -432,6 +441,7 @@ export const noteStorage = {
   async deleteFolder(userId, folderId) {
     if (!userId || !folderId) return false
     try {
+      await this.recordTombstone(userId, 'folder', folderId)
       const db = await openDB()
       if (!db) {
         let flds = await this.getUserFolders(userId)
@@ -480,5 +490,186 @@ export const noteStorage = {
       console.error('Errore eliminazione cartella:', e)
       return false
     }
+  },
+
+  /* ==========================================================================
+     SINCRONIZZAZIONE SERVER NAS (DUE VIE)
+     ========================================================================== */
+
+  /**
+   * Salva un record di eliminazione (tombstone) per sincronizzazione
+   */
+  async recordTombstone(userId, type, id) {
+    if (!userId || !id) return
+    const record = { id, type, userId, isDeleted: true, updatedAt: Date.now() }
+    try {
+      const db = await openDB()
+      if (db && db.objectStoreNames.contains(STORE_TOMBSTONES)) {
+        return new Promise((resolve) => {
+          const tx = db.transaction(STORE_TOMBSTONES, 'readwrite')
+          tx.objectStore(STORE_TOMBSTONES).put(record)
+          tx.oncomplete = () => resolve()
+          tx.onerror = () => resolve()
+        })
+      }
+      const raw = localStorage.getItem(`tombstones_${userId}`)
+      const list = raw ? JSON.parse(raw) : []
+      list.push(record)
+      localStorage.setItem(`tombstones_${userId}`, JSON.stringify(list))
+    } catch (e) {
+      console.warn('Errore salvataggio tombstone:', e)
+    }
+  },
+
+  /**
+   * Recupera tutti i dati locali (notebooks, folders, note pages) per sync
+   */
+  async getAllLocalData(userId) {
+    if (!userId) return { notebooks: [], folders: [], notes: [] }
+    let notebooks = await this.getUserNotebooks(userId)
+    let folders = await this.getUserFolders(userId)
+    let notes = []
+    let tombstones = []
+
+    try {
+      const db = await openDB()
+      if (db) {
+        // Leggi tutte le pagine di note
+        notes = await new Promise((resolve) => {
+          const tx = db.transaction(STORE_NOTES, 'readonly')
+          const req = tx.objectStore(STORE_NOTES).getAll()
+          req.onsuccess = () => resolve(req.result || [])
+          req.onerror = () => resolve([])
+        })
+        if (db.objectStoreNames.contains(STORE_TOMBSTONES)) {
+          tombstones = await new Promise((resolve) => {
+            const tx = db.transaction(STORE_TOMBSTONES, 'readonly')
+            const req = tx.objectStore(STORE_TOMBSTONES).getAll()
+            req.onsuccess = () => resolve((req.result || []).filter((t) => t.userId === userId))
+            req.onerror = () => resolve([])
+          })
+        }
+      } else {
+        const raw = localStorage.getItem(`tombstones_${userId}`)
+        tombstones = raw ? JSON.parse(raw) : []
+      }
+    } catch (e) {
+      console.warn('Errore lettura dati completi:', e)
+    }
+
+    // Includi tombstones nei rispettivi elenchi
+    const deletedNotebooks = tombstones.filter((t) => t.type === 'notebook')
+    const deletedFolders = tombstones.filter((t) => t.type === 'folder')
+    const deletedNotes = tombstones.filter((t) => t.type === 'note')
+
+    return {
+      notebooks: [...notebooks, ...deletedNotebooks],
+      folders: [...folders, ...deletedFolders],
+      notes: [...notes, ...deletedNotes]
+    }
+  },
+
+  /**
+   * Applica i dati sincronizzati dal server nel database locale
+   */
+  async applySyncedData(userId, syncedData) {
+    if (!userId || !syncedData) return
+    const { notebooks = [], folders = [], notes = [] } = syncedData
+
+    try {
+      const db = await openDB()
+      if (!db) {
+        localStorage.setItem(`notebooks_${userId}`, JSON.stringify(notebooks.filter((n) => !n.isDeleted && n.userId === userId)))
+        localStorage.setItem(`folders_${userId}`, JSON.stringify(folders.filter((f) => !f.isDeleted && f.userId === userId)))
+        localStorage.removeItem(`tombstones_${userId}`)
+        return
+      }
+
+      // Salva notebooks, folders, notes
+      const tx = db.transaction([STORE_NOTEBOOKS, STORE_FOLDERS, STORE_NOTES, STORE_TOMBSTONES], 'readwrite')
+      const nbStore = tx.objectStore(STORE_NOTEBOOKS)
+      const fStore = tx.objectStore(STORE_FOLDERS)
+      const notesStore = tx.objectStore(STORE_NOTES)
+      const tStore = tx.objectStore(STORE_TOMBSTONES)
+
+      // Pulisci vecchi tombstones applicati
+      tStore.clear()
+
+      notebooks.forEach((nb) => {
+        if (nb.userId === userId) {
+          if (nb.isDeleted) {
+            nbStore.delete(nb.id)
+          } else {
+            nbStore.put(nb)
+          }
+        }
+      })
+
+      folders.forEach((f) => {
+        if (f.userId === userId) {
+          if (f.isDeleted) {
+            fStore.delete(f.id)
+          } else {
+            fStore.put(f)
+          }
+        }
+      })
+
+      notes.forEach((n) => {
+        if (n.isDeleted) {
+          notesStore.delete(n.id)
+        } else {
+          notesStore.put(n)
+        }
+      })
+
+      await new Promise((resolve, reject) => {
+        tx.oncomplete = () => resolve(true)
+        tx.onerror = () => reject(tx.error)
+      })
+    } catch (e) {
+      console.error('Errore applicazione dati sincronizzati:', e)
+    }
+  },
+
+  /**
+   * Sincronizzazione a due vie con il server NAS
+   */
+  async syncWithServer(userId, apiClient) {
+    if (!userId || !apiClient) return { success: false, reason: 'missing_params' }
+    try {
+      const localData = await this.getAllLocalData(userId)
+
+      let res
+      if (typeof apiClient.post === 'function') {
+        res = await apiClient.post('/api/me/notes-sync', localData)
+      } else if (typeof apiClient.$post === 'function') {
+        res = await apiClient.$post('/api/me/notes-sync', localData)
+      } else {
+        return { success: false, reason: 'unsupported_client' }
+      }
+
+      const responseData = res && res.data ? res.data : res
+      if (responseData && (responseData.success || responseData.notebooks)) {
+        await this.applySyncedData(userId, responseData)
+        return { success: true, ...responseData }
+      }
+      return { success: false, reason: 'invalid_response' }
+    } catch (err) {
+      console.warn('Sincronizzazione note con NAS non riuscita (possibile modalità offline):', err)
+      return { success: false, offline: true, error: err }
+    }
+  },
+
+  /**
+   * Helper per sincronizzazione automatica invocabile da SmartNetworkManager
+   */
+  async syncOfflineNotes(userId) {
+    if (typeof window === 'undefined') return { success: false }
+    const client = window.$nuxt?.$nativeHttp || window.$nuxt?.$axios
+    if (client) {
+      return this.syncWithServer(userId, client)
+    }
+    return { success: false, reason: 'no_client' }
   }
 }

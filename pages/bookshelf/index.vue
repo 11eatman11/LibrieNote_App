@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="w-full h-full min-h-full relative">
     <div v-if="attemptingConnection" class="w-full pt-4 flex items-center justify-center">
       <widgets-loading-spinner />
@@ -9,13 +9,87 @@
       <p class="pl-4">{{ $strings.MessageLoadingServerData }}</p>
     </div>
 
+    <!-- Sezione Note & Appunti Personali (In Primo Piano) -->
+    <div v-if="isNotesEnabled" class="w-full px-4 pt-3 pb-2 select-none">
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center space-x-2">
+          <span class="material-symbols text-xl text-blue-400">edit_note</span>
+          <h2 class="font-bold text-base text-gray-100">Le Mie Note & Appunti</h2>
+        </div>
+        <nuxt-link
+          to="/bookshelf/collections?tab=notes"
+          class="text-xs text-blue-400 hover:text-blue-300 font-medium flex items-center space-x-1"
+        >
+          <span>Cartelle Note</span>
+          <span class="material-symbols text-sm">folder_open</span>
+        </nuxt-link>
+      </div>
+
+      <!-- Azioni e Carousel Note Recenti -->
+      <div class="flex items-center space-x-3 overflow-x-auto pb-2 scrollbar-none">
+        <!-- Pulsante + Nuova Nota -->
+        <button
+          type="button"
+          class="flex-shrink-0 w-36 h-24 rounded-2xl border-2 border-dashed border-blue-500/50 hover:border-blue-400 bg-blue-900/30 active:scale-95 transition-all flex flex-col items-center justify-center p-2.5 text-center cursor-pointer shadow-lg"
+          @click="showCreateNoteModal = true"
+        >
+          <div class="w-8 h-8 rounded-xl bg-blue-600/40 border border-blue-400/50 flex items-center justify-center text-blue-300 mb-1">
+            <span class="material-symbols text-xl">note_add</span>
+          </div>
+          <span class="font-bold text-xs text-white">+ Nuova Nota</span>
+          <span class="text-xxs text-blue-200/80">Crea appunto</span>
+        </button>
+
+        <!-- Pulsante Cartelle & Taccuini -->
+        <nuxt-link
+          to="/bookshelf/collections?tab=notes"
+          class="flex-shrink-0 w-36 h-24 rounded-2xl border border-purple-500/40 bg-purple-950/40 hover:bg-purple-900/40 active:scale-95 transition-all flex flex-col items-center justify-center p-2.5 text-center cursor-pointer shadow-lg"
+        >
+          <div class="w-8 h-8 rounded-xl bg-purple-600/30 border border-purple-400/50 flex items-center justify-center text-purple-300 mb-1">
+            <span class="material-symbols text-xl">folder_special</span>
+          </div>
+          <span class="font-bold text-xs text-white">Cartelle Note</span>
+          <span class="text-xxs text-purple-200/80">Tutti i taccuini</span>
+        </nuxt-link>
+
+        <!-- Schede Note Recenti dell'Utente -->
+        <div
+          v-for="note in userNotes.slice(0, 10)"
+          :key="note.id"
+          class="flex-shrink-0 w-36 h-24 rounded-2xl bg-gray-900/95 border border-gray-800 hover:border-blue-500/60 active:scale-95 p-2.5 flex flex-col justify-between transition-all cursor-pointer relative shadow-lg"
+          @click="openNotebook(note)"
+        >
+          <div class="flex items-start justify-between">
+            <span class="material-symbols text-base text-blue-400">description</span>
+            <span class="px-1.5 py-0.5 rounded text-xxs font-medium bg-black/50 text-gray-400 border border-white/5">
+              {{ formatNoteDate(note.updatedAt || note.createdAt) }}
+            </span>
+          </div>
+          <div>
+            <h3 class="font-bold text-xs text-white truncate leading-tight">{{ note.title || 'Nuova Nota' }}</h3>
+            <span class="text-xxs text-gray-400 truncate block mt-0.5">{{ getTemplateLabel(note.sheetStyle && note.sheetStyle.template) }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modali Note Studio -->
+    <create-note-modal v-model="showCreateNoteModal" @created="onNoteCreated" />
+    <note-studio-notebook-modal
+      v-model="showNotebookModal"
+      :notebook="activeNotebook"
+      @updated="loadUserNotes"
+      @closed="loadUserNotes"
+      @note-created="onNoteCreated"
+    />
+
     <div class="w-full" :class="{ 'py-6': altViewEnabled }">
       <template v-for="(shelf, index) in shelves">
         <bookshelf-shelf :key="shelf.id" :label="getShelfLabel(shelf)" :entities="shelf.entities" :type="shelf.type" :style="{ zIndex: shelves.length - index }" />
       </template>
     </div>
 
-    <div v-if="!shelves.length && !isLoading" class="absolute top-0 left-0 w-full h-full flex items-center justify-center">
+    <div v-if="!shelves.length && !isLoading && !userNotes.length" class="absolute top-0 left-0 w-full h-full flex items-center justify-center">
       <div>
         <p class="mb-4 text-center text-xl">
           {{ $strings.MessageBookshelfEmpty }}
@@ -38,7 +112,15 @@
 </template>
 
 <script>
+import CreateNoteModal from '@/components/notes/CreateNoteModal.vue'
+import NoteStudioNotebookModal from '@/components/notes/NoteStudioNotebookModal.vue'
+import { noteStorage } from '@/services/noteStorage'
+
 export default {
+  components: {
+    CreateNoteModal,
+    NoteStudioNotebookModal
+  },
   props: {},
   data() {
     return {
@@ -48,40 +130,44 @@ export default {
       lastServerFetchLibraryId: null,
       lastLocalFetch: 0,
       localLibraryItems: [],
-      isLoading: false
+      isLoading: false,
+      userNotes: [],
+      showCreateNoteModal: false,
+      showNotebookModal: false,
+      activeNotebook: null
     }
   },
   watch: {
     networkConnected(newVal) {
-      // Update shelves when network connect status changes
-      console.log(`[categories] Network changed to ${newVal} - fetch categories. ${this.lastServerFetch}/${this.lastLocalFetch}`)
+      console.log('[categories] Network changed to ' + newVal + ' - fetch categories.')
 
       if (newVal) {
-        // Fetch right away the first time network connects
         if (this.isFirstNetworkConnection) {
           this.isFirstNetworkConnection = false
-          console.log(`[categories] networkConnected true first network connection. lastServerFetch=${this.lastServerFetch}`)
           this.fetchCategories()
-    this.loadUserNotes()
+          this.loadUserNotes()
           return
         }
 
         setTimeout(() => {
-          // Using timeout because making this fetch as soon as network gets connected will often fail on Android
-          console.log(`[categories] networkConnected true so fetching categories. lastServerFetch=${this.lastServerFetch}`)
           this.fetchCategories()
-    this.loadUserNotes()
-        }, 4000)
+          this.loadUserNotes()
+        }, 3000)
       } else {
-        console.log(`[categories] networkConnected false so fetching categories`)
         this.fetchCategories()
-    this.loadUserNotes()
+        this.loadUserNotes()
       }
     }
   },
   computed: {
     user() {
       return this.$store.state.user.user
+    },
+    userId() {
+      return this.user ? this.user.id : 'default_user'
+    },
+    isNotesEnabled() {
+      return this.$store.getters['libraries/getLibraryNotesEnabled']
     },
     networkConnected() {
       return this.$store.state.networkConnected
@@ -112,29 +198,74 @@ export default {
     }
   },
   methods: {
+    async loadUserNotes() {
+      try {
+        this.userNotes = await noteStorage.getUserNotebooks(this.userId)
+        if (this.networkConnected && this.user) {
+          const client = this.$nativeHttp || this.$axios
+          noteStorage.syncWithServer(this.userId, client).then((res) => {
+            if (res && res.success) {
+              noteStorage.getUserNotebooks(this.userId).then((nbs) => {
+                this.userNotes = nbs
+              })
+            }
+          })
+        }
+      } catch (e) {
+        console.warn('Errore caricamento note:', e)
+      }
+    },
+    openNotebook(note) {
+      this.activeNotebook = note
+      this.showNotebookModal = true
+    },
+    onNoteCreated(newNote) {
+      this.loadUserNotes()
+      this.activeNotebook = newNote
+      this.showNotebookModal = true
+    },
+    formatNoteDate(timestamp) {
+      if (!timestamp) return ''
+      const date = new Date(timestamp)
+      return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })
+    },
+    getTemplateLabel(tpl) {
+      const map = {
+        blank: 'Bianco',
+        ruled: 'Righe',
+        ruled_narrow: 'Righe Strette',
+        grid: 'Quadretti',
+        music: 'Pentagramma',
+        cornell: 'Cornell',
+        millimeter: 'Millimetrata',
+        dot: 'Puntinato'
+      }
+      return map[tpl] || 'Nota'
+    },
     getShelfLabel(shelf) {
       if (shelf.labelStringKey && this.$strings[shelf.labelStringKey]) return this.$strings[shelf.labelStringKey]
       return shelf.label
     },
     getLocalMediaItemCategories() {
       const localMedia = this.localLibraryItems
-      if (!localMedia?.length) return []
 
       const categories = []
-      const books = []
-      const podcasts = []
       const booksContinueListening = []
       const podcastEpisodesContinueListening = []
+      const books = []
+      const podcasts = []
+
       localMedia.forEach((item) => {
-        if (item.mediaType == 'book') {
-          item.progress = this.$store.getters['globals/getLocalMediaProgressById'](item.id)
-          if (item.progress && !item.progress.isFinished && item.progress.progress > 0) booksContinueListening.push(item)
+        if (item.mediaType === 'book') {
+          if (item.progress && !item.progress.isFinished) {
+            booksContinueListening.push(item)
+          }
           books.push(item)
-        } else if (item.mediaType == 'podcast') {
-          const podcastEpisodeItemCloner = { ...item }
-          item.media.episodes = item.media.episodes.map((ep) => {
-            ep.progress = this.$store.getters['globals/getLocalMediaProgressById'](item.id, ep.id)
-            if (ep.progress && !ep.progress.isFinished && ep.progress.progress > 0) {
+        } else if (item.mediaType === 'podcast') {
+          item.episodes = item.episodes.map((ep) => {
+            const podcastEpisodeItemCloner = { ...item }
+            delete podcastEpisodeItemCloner.episodes
+            if (ep.progress && !ep.progress.isFinished) {
               podcastEpisodesContinueListening.push({
                 ...podcastEpisodeItemCloner,
                 recentEpisode: ep
@@ -146,7 +277,6 @@ export default {
         }
       })
 
-      // Local continue listening shelves, only shown offline
       if (booksContinueListening.length) {
         categories.push({
           id: 'local-books-continue',
@@ -176,7 +306,6 @@ export default {
         })
       }
 
-      // Local books and local podcast shelves
       if (books.length) {
         categories.push({
           id: 'local-books',
@@ -204,26 +333,19 @@ export default {
       return categories
     },
     async fetchCategories() {
-      console.log(`[categories] fetchCategories networkConnected=${this.networkConnected}, lastServerFetch=${this.lastServerFetch}, lastLocalFetch=${this.lastLocalFetch}`)
-
-      // TODO: Find a better way to keep the shelf up-to-date with local vs server library because this is a disaster
       const isConnectedToServerWithInternet = this.user && this.currentLibraryId && this.networkConnected
       if (isConnectedToServerWithInternet) {
         if (this.lastServerFetch && Date.now() - this.lastServerFetch < 5000 && this.lastServerFetchLibraryId == this.currentLibraryId) {
-          console.log(`[categories] fetchCategories server fetch was ${Date.now() - this.lastServerFetch}ms ago so not doing it.`)
           return
         } else {
-          console.log(`[categories] fetchCategories fetching from server. Last was ${this.lastServerFetch ? Date.now() - this.lastServerFetch + 'ms' : 'Never'} ago. lastServerFetchLibraryId=${this.lastServerFetchLibraryId} and currentLibraryId=${this.currentLibraryId}`)
           this.lastServerFetchLibraryId = this.currentLibraryId
           this.lastServerFetch = Date.now()
           this.lastLocalFetch = 0
         }
       } else {
         if (this.lastLocalFetch && Date.now() - this.lastLocalFetch < 5000) {
-          console.log(`[categories] fetchCategories local fetch was ${Date.now() - this.lastLocalFetch}ms ago so not doing it.`)
           return
         } else {
-          console.log(`[categories] fetchCategories fetching from local. Last was ${this.lastLocalFetch ? Date.now() - this.lastLocalFetch + 'ms' : 'Never'} ago`)
           this.lastServerFetchLibraryId = null
           this.lastServerFetch = 0
           this.lastLocalFetch = Date.now()
@@ -232,30 +354,24 @@ export default {
 
       this.isLoading = true
 
-      // Set local library items first
       this.localLibraryItems = await this.$db.getLocalLibraryItems()
       const localCategories = this.getLocalMediaItemCategories()
       this.shelves = localCategories
-      console.log('[categories] Local shelves set', this.shelves.length, this.lastLocalFetch)
 
       if (isConnectedToServerWithInternet) {
-        const categories = await this.$nativeHttp.get(`/api/libraries/${this.currentLibraryId}/personalized?minified=1&include=rssfeed,numEpisodesIncomplete`, { connectTimeout: 10000 }).catch((error) => {
+        const categories = await this.$nativeHttp.get('/api/libraries/' + this.currentLibraryId + '/personalized?minified=1&include=rssfeed,numEpisodesIncomplete', { connectTimeout: 10000 }).catch((error) => {
           console.error('[categories] Failed to fetch categories', error)
           return []
         })
         if (!categories.length) {
-          // Failed to load categories so use local shelves
-          console.warn(`[categories] Failed to get server categories so using local categories`)
           this.lastServerFetch = 0
           this.lastLocalFetch = Date.now()
           this.isLoading = false
-          console.log('[categories] Local shelves set from failure', this.shelves.length, this.lastLocalFetch)
           return
         }
 
         this.shelves = categories.map((cat) => {
           if (cat.type == 'book' || cat.type == 'podcast' || cat.type == 'episode') {
-            // Map localLibraryItem to entities
             cat.entities = cat.entities.map((entity) => {
               const localLibraryItem = this.localLibraryItems.find((lli) => {
                 return lli.libraryItemId == entity.id
@@ -269,26 +385,22 @@ export default {
           return cat
         })
 
-        // Only add the local shelf with the same media type
         const localShelves = localCategories.filter((cat) => cat.type === this.currentLibraryMediaType && !cat.localOnly)
         this.shelves.push(...localShelves)
-        console.log('[categories] Server shelves set', this.shelves.length, this.lastServerFetch)
       }
 
       this.isLoading = false
     },
     libraryChanged() {
       if (this.currentLibraryId) {
-        console.log(`[categories] libraryChanged so fetching categories`)
         this.fetchCategories()
-    this.loadUserNotes()
+        this.loadUserNotes()
       }
     },
     audiobookAdded(audiobook) {
-      // TODO: Check if audiobook would be on this shelf
       if (!this.search) {
         this.fetchCategories()
-    this.loadUserNotes()
+        this.loadUserNotes()
       }
     },
     audiobookUpdated(audiobook) {
@@ -339,7 +451,6 @@ export default {
 
     this.initListeners()
     await this.$store.dispatch('globals/loadLocalMediaProgress')
-    console.log(`[categories] mounted so fetching categories`)
     this.fetchCategories()
     this.loadUserNotes()
   },
@@ -348,3 +459,16 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+.text-xxs {
+  font-size: 0.65rem;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+</style>
