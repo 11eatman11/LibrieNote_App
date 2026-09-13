@@ -406,9 +406,15 @@ export default {
   mounted() {
     this.loadAllData(true)
     this.$eventBus?.$on('notes-synced', () => this.loadAllData(false))
+    if (this.$root.socket) {
+      this.$root.socket.on('notes_updated', () => this.loadAllData(false))
+    }
   },
   beforeDestroy() {
     this.$eventBus?.$off('notes-synced', () => this.loadAllData(false))
+    if (this.$root.socket) {
+      this.$root.socket.off('notes_updated', () => this.loadAllData(false))
+    }
   },
   methods: {
     async loadAllData(andSync = false) {

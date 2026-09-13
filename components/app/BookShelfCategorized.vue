@@ -545,6 +545,7 @@ export default {
     initListeners() {
       if (this.$root.socket) {
         this.$root.socket.on('user_updated', this.userUpdated)
+        this.$root.socket.on('notes_updated', this.loadUserNotes)
         this.$root.socket.on('author_updated', this.authorUpdated)
         this.$root.socket.on('author_removed', this.authorRemoved)
         this.$root.socket.on('item_updated', this.libraryItemUpdated)
@@ -601,6 +602,7 @@ export default {
     removeListeners() {
       if (this.$root.socket) {
         this.$root.socket.off('user_updated', this.userUpdated)
+        this.$root.socket.off('notes_updated', this.loadUserNotes)
         this.$root.socket.off('author_updated', this.authorUpdated)
         this.$root.socket.off('author_removed', this.authorRemoved)
         this.$root.socket.off('item_updated', this.libraryItemUpdated)
