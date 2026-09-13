@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="note-studio-toolbar fixed right-3 top-20 z-40 flex flex-col items-center select-none">
     <!-- Floating Toolbar Capsule -->
     <div class="bg-gray-900/90 backdrop-blur-md border border-gray-700/80 rounded-2xl shadow-2xl p-1.5 flex flex-col items-center space-y-1.5 text-gray-200">
@@ -43,7 +43,7 @@
               <span class="material-symbols text-sm text-blue-400">edit</span>
               <span>Penna Digitale</span>
             </span>
-            <button type="button" class="text-gray-400 hover:text-white p-0.5 rounded hover:bg-white/10" @click="openMenu = null">&times;</button>
+            <button type="button" class="text-gray-400 hover:text-white p-0.5 rounded hover:bg-white/10" @click="openMenu = null">✕</button>
           </div>
           <div>
             <div class="flex justify-between text-gray-400 mb-1">
@@ -130,7 +130,7 @@
               <span class="material-symbols text-sm text-amber-400">ink_highlighter</span>
               <span>Evidenziatore</span>
             </span>
-            <button type="button" class="text-gray-400 hover:text-white p-0.5 rounded hover:bg-white/10" @click="openMenu = null">&times;</button>
+            <button type="button" class="text-gray-400 hover:text-white p-0.5 rounded hover:bg-white/10" @click="openMenu = null">✕</button>
           </div>
           <!-- Spessore -->
           <div>
@@ -255,7 +255,7 @@
               <span class="material-symbols text-sm text-rose-400">ink_eraser</span>
               <span>Gomma Intelligente</span>
             </span>
-            <button type="button" class="text-gray-400 hover:text-white p-0.5 rounded hover:bg-white/10" @click="openMenu = null">&times;</button>
+            <button type="button" class="text-gray-400 hover:text-white p-0.5 rounded hover:bg-white/10" @click="openMenu = null">✕</button>
           </div>
           <div class="space-y-1.5">
             <button
@@ -359,7 +359,7 @@
               <span class="material-symbols text-sm text-blue-400">note_add</span>
               <span>Pagine & Note</span>
             </span>
-            <button type="button" class="text-gray-400 hover:text-white p-0.5 rounded hover:bg-white/10" @click="openMenu = null">&times;</button>
+            <button type="button" class="text-gray-400 hover:text-white p-0.5 rounded hover:bg-white/10" @click="openMenu = null">✕</button>
           </div>
           <div class="space-y-1">
             <button

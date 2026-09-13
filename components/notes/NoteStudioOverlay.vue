@@ -1,8 +1,14 @@
 <template>
   <div
     v-if="active"
-    class="note-studio-overlay absolute inset-0 z-30 pointer-events-none overflow-hidden"
-    :class="{ 'opacity-0': !notesVisible }"
+    class="note-studio-overlay absolute inset-0 z-30 overflow-hidden"
+    :class="[
+      { 'opacity-0': !notesVisible },
+      isTransparentBackground ? 'pointer-events-none' : 'pointer-events-auto'
+    ]"
+    :style="!isTransparentBackground ? 'pointer-events: auto !important; touch-action: none !important; overscroll-behavior: contain !important;' : ''"
+    @touchmove="!isTransparentBackground && $event.stopPropagation()"
+    @pointerdown="!isTransparentBackground && $event.stopPropagation()"
   >
     <!-- Background Layer (modelli foglio, pentagramma, colori) solo per taccuini autonomi -->
     <sheet-background
@@ -169,7 +175,7 @@ export default {
       if (['pen', 'highlighter', 'eraser'].includes(this.activeTool)) {
         return 'pointer-events-auto cursor-crosshair'
       }
-      return 'pointer-events-none'
+      return this.isTransparentBackground ? 'pointer-events-none' : 'pointer-events-auto cursor-default'
     }
   },
   watch: {

@@ -1,7 +1,9 @@
 <template>
   <div
     v-if="value"
-    class="fixed inset-0 z-70 pointer-events-auto flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 select-none"
+    class="fixed inset-0 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 select-none"
+    style="position: fixed !important; inset: 0 !important; z-index: 999999 !important; pointer-events: auto !important; touch-action: none !important;"
+    @touchmove.stop
     @click.self="close"
   >
     <div class="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden text-gray-100 flex flex-col max-h-[90vh] animate-scale-up">

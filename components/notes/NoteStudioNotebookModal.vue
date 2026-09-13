@@ -1,5 +1,11 @@
 <template>
-  <div v-if="value && notebook" class="note-studio-modal fixed inset-0 z-60 bg-gray-950 flex flex-col select-none">
+  <div
+    v-if="value && notebook"
+    class="note-studio-modal fixed inset-0 flex flex-col select-none"
+    style="position: fixed !important; inset: 0 !important; z-index: 999999 !important; background-color: #030712 !important; width: 100vw !important; height: 100vh !important; touch-action: none !important; overscroll-behavior: contain !important; pointer-events: auto !important;"
+    @touchmove.stop
+    @pointerdown.stop
+  >
     <!-- Top Navigation & Title Bar -->
     <div class="h-14 bg-gray-900/95 border-b border-gray-800 px-3 sm:px-4 flex items-center justify-between z-50 backdrop-blur-md">
       <!-- Left: Back Button & Editable Title -->
@@ -110,7 +116,7 @@
     </div>
 
     <!-- Main Canvas / Note Studio Area -->
-    <div class="relative flex-1 w-full h-full overflow-hidden bg-gray-950">
+    <div class="relative flex-1 w-full h-full overflow-hidden bg-gray-950 pointer-events-auto" style="touch-action: none !important;">
       <note-studio-overlay
         :key="`${notebook.id}_page_${currentPage}`"
         :active="true"
@@ -139,12 +145,16 @@ import CreateNoteModal from './CreateNoteModal.vue'
 import { noteStorage } from '@/services/noteStorage'
 
 export default {
+  name: 'NoteStudioNotebookModal',
   components: {
     NoteStudioOverlay,
     CreateNoteModal
   },
   props: {
-    value: Boolean,
+    value: {
+      type: Boolean,
+      default: false
+    },
     notebook: {
       type: Object,
       default: () => null
@@ -152,16 +162,16 @@ export default {
   },
   data() {
     return {
-      isEditingTitle: false,
-      tempTitle: '',
       currentPage: 1,
       totalPages: 1,
+      isEditingTitle: false,
+      tempTitle: '',
       showCreateNoteModal: false
     }
   },
   computed: {
     userId() {
-      return this.$store.state.user.user?.id || 'default_user'
+      return this.$store?.state?.user?.user?.id || 'default_user'
     }
   },
   watch: {
@@ -169,9 +179,9 @@ export default {
       immediate: true,
       handler(val) {
         if (val) {
-          this.tempTitle = val.title || ''
           this.currentPage = 1
-          this.totalPages = Math.max(1, val.pageCount || 1)
+          this.totalPages = val.pageCount || 1
+          this.tempTitle = val.title || ''
         }
       }
     }
@@ -232,7 +242,14 @@ export default {
 
 <style scoped>
 .note-studio-modal {
-  touch-action: none;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 999999 !important;
+  background-color: #030712 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  touch-action: none !important;
+  overscroll-behavior: contain !important;
+  pointer-events: auto !important;
 }
 </style>
-

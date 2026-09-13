@@ -187,24 +187,47 @@ export const noteStorage = {
      ========================================================================== */
 
   /**
-   * Recupera tutti i taccuini dell'utente corrente
+   * Recupera tutti i taccuini dell'utente corrente (con migrazione automatica da default_user se autenticato)
    */
   async getUserNotebooks(userId) {
-    if (!userId) return []
+    const effectiveUserId = userId || (typeof window !== 'undefined' && window.$nuxt?.$store?.state?.user?.user?.id) || 'default_user'
     try {
       const db = await openDB()
       if (!db) {
-        const raw = localStorage.getItem(`notebooks_${userId}`)
-        return raw ? JSON.parse(raw) : []
+        const raw = localStorage.getItem(`notebooks_${effectiveUserId}`)
+        let list = raw ? JSON.parse(raw) : []
+        if (effectiveUserId !== 'default_user') {
+          const defaultRaw = localStorage.getItem('notebooks_default_user')
+          if (defaultRaw) {
+            const defaultList = JSON.parse(defaultRaw)
+            if (defaultList && defaultList.length > 0) {
+              list = [...list, ...defaultList.map((n) => ({ ...n, userId: effectiveUserId }))]
+              localStorage.setItem(`notebooks_${effectiveUserId}`, JSON.stringify(list))
+              localStorage.removeItem('notebooks_default_user')
+            }
+          }
+        }
+        return list
       }
       return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NOTEBOOKS, 'readonly')
+        const tx = db.transaction(STORE_NOTEBOOKS, 'readwrite')
         const store = tx.objectStore(STORE_NOTEBOOKS)
         const req = store.getAll()
         req.onsuccess = () => {
           const all = req.result || []
-          // Filtra strettamente per userId
-          const userOnly = all.filter((n) => n.userId === userId)
+          // Include note dell'utente oppure note create offline/senza ID (default_user)
+          const userOnly = all.filter((n) => n.userId === effectiveUserId || n.userId === 'default_user' || !n.userId)
+
+          // Se l'utente è autenticato ed esistono note create come default_user, migriamole in IndexedDB
+          if (effectiveUserId !== 'default_user') {
+            userOnly.forEach((n) => {
+              if (n.userId !== effectiveUserId) {
+                n.userId = effectiveUserId
+                store.put(n)
+              }
+            })
+          }
+
           userOnly.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
           resolve(userOnly)
         }
@@ -220,10 +243,10 @@ export const noteStorage = {
    * Crea un nuovo taccuino/nota per l'utente
    */
   async createNotebook(userId, { title, folderId, sheetStyle, previewText } = {}) {
-    if (!userId) return null
+    const effectiveUserId = userId || (typeof window !== 'undefined' && window.$nuxt?.$store?.state?.user?.user?.id) || 'default_user'
     const newNote = {
       id: 'nb_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
-      userId,
+      userId: effectiveUserId,
       title: title && title.trim() ? title.trim() : 'Nuova Nota',
       folderId: folderId || null,
       createdAt: Date.now(),
@@ -235,9 +258,9 @@ export const noteStorage = {
     try {
       const db = await openDB()
       if (!db) {
-        const list = await this.getUserNotebooks(userId)
+        const list = await this.getUserNotebooks(effectiveUserId)
         list.unshift(newNote)
-        localStorage.setItem(`notebooks_${userId}`, JSON.stringify(list))
+        localStorage.setItem(`notebooks_${effectiveUserId}`, JSON.stringify(list))
         return newNote
       }
       return new Promise((resolve, reject) => {
@@ -257,15 +280,16 @@ export const noteStorage = {
    * Aggiorna metadati di un taccuino (titolo, folder, stile, updatedAt)
    */
   async updateNotebook(userId, noteId, updates = {}) {
-    if (!userId || !noteId) return false
+    const effectiveUserId = userId || (typeof window !== 'undefined' && window.$nuxt?.$store?.state?.user?.user?.id) || 'default_user'
+    if (!noteId) return false
     try {
       const db = await openDB()
       if (!db) {
-        const list = await this.getUserNotebooks(userId)
-        const idx = list.findIndex((n) => n.id === noteId && n.userId === userId)
+        const list = await this.getUserNotebooks(effectiveUserId)
+        const idx = list.findIndex((n) => n.id === noteId)
         if (idx >= 0) {
           list[idx] = { ...list[idx], ...updates, updatedAt: Date.now() }
-          localStorage.setItem(`notebooks_${userId}`, JSON.stringify(list))
+          localStorage.setItem(`notebooks_${effectiveUserId}`, JSON.stringify(list))
           return true
         }
         return false
@@ -276,8 +300,8 @@ export const noteStorage = {
         const getReq = store.get(noteId)
         getReq.onsuccess = () => {
           const item = getReq.result
-          if (item && item.userId === userId) {
-            const updated = { ...item, ...updates, updatedAt: Date.now() }
+          if (item) {
+            const updated = { ...item, ...updates, userId: effectiveUserId, updatedAt: Date.now() }
             store.put(updated)
             resolve(true)
           } else {
@@ -296,14 +320,15 @@ export const noteStorage = {
    * Elimina un taccuino e le sue pagine
    */
   async deleteNotebook(userId, noteId) {
-    if (!userId || !noteId) return false
+    const effectiveUserId = userId || (typeof window !== 'undefined' && window.$nuxt?.$store?.state?.user?.user?.id) || 'default_user'
+    if (!noteId) return false
     try {
-      await this.recordTombstone(userId, 'notebook', noteId)
+      await this.recordTombstone(effectiveUserId, 'notebook', noteId)
       const db = await openDB()
       if (!db) {
-        const list = await this.getUserNotebooks(userId)
-        const filtered = list.filter((n) => !(n.id === noteId && n.userId === userId))
-        localStorage.setItem(`notebooks_${userId}`, JSON.stringify(filtered))
+        const list = await this.getUserNotebooks(effectiveUserId)
+        const filtered = list.filter((n) => n.id !== noteId)
+        localStorage.setItem(`notebooks_${effectiveUserId}`, JSON.stringify(filtered))
         localStorage.removeItem(`note_${noteId}_page_1`)
         return true
       }
@@ -329,23 +354,45 @@ export const noteStorage = {
      ========================================================================== */
 
   /**
-   * Recupera tutte le cartelle create dall'utente
+   * Recupera tutte le cartelle create dall'utente (con migrazione automatica)
    */
   async getUserFolders(userId) {
-    if (!userId) return []
+    const effectiveUserId = userId || (typeof window !== 'undefined' && window.$nuxt?.$store?.state?.user?.user?.id) || 'default_user'
     try {
       const db = await openDB()
       if (!db) {
-        const raw = localStorage.getItem(`folders_${userId}`)
-        return raw ? JSON.parse(raw) : []
+        const raw = localStorage.getItem(`folders_${effectiveUserId}`)
+        let list = raw ? JSON.parse(raw) : []
+        if (effectiveUserId !== 'default_user') {
+          const defaultRaw = localStorage.getItem('folders_default_user')
+          if (defaultRaw) {
+            const defaultList = JSON.parse(defaultRaw)
+            if (defaultList && defaultList.length > 0) {
+              list = [...list, ...defaultList.map((f) => ({ ...f, userId: effectiveUserId }))]
+              localStorage.setItem(`folders_${effectiveUserId}`, JSON.stringify(list))
+              localStorage.removeItem('folders_default_user')
+            }
+          }
+        }
+        return list
       }
       return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_FOLDERS, 'readonly')
+        const tx = db.transaction(STORE_FOLDERS, 'readwrite')
         const store = tx.objectStore(STORE_FOLDERS)
         const req = store.getAll()
         req.onsuccess = () => {
           const all = req.result || []
-          const userOnly = all.filter((f) => f.userId === userId)
+          const userOnly = all.filter((f) => f.userId === effectiveUserId || f.userId === 'default_user' || !f.userId)
+
+          if (effectiveUserId !== 'default_user') {
+            userOnly.forEach((f) => {
+              if (f.userId !== effectiveUserId) {
+                f.userId = effectiveUserId
+                store.put(f)
+              }
+            })
+          }
+
           userOnly.sort((a, b) => a.name.localeCompare(b.name))
           resolve(userOnly)
         }
@@ -361,10 +408,11 @@ export const noteStorage = {
    * Crea una cartella o sotto-cartella
    */
   async createFolder(userId, name, parentId = null) {
-    if (!userId || !name || !name.trim()) return null
+    const effectiveUserId = userId || (typeof window !== 'undefined' && window.$nuxt?.$store?.state?.user?.user?.id) || 'default_user'
+    if (!name || !name.trim()) return null
     const newFolder = {
       id: 'fld_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
-      userId,
+      userId: effectiveUserId,
       name: name.trim(),
       parentId: parentId || null,
       createdAt: Date.now(),
@@ -374,9 +422,9 @@ export const noteStorage = {
     try {
       const db = await openDB()
       if (!db) {
-        const list = await this.getUserFolders(userId)
+        const list = await this.getUserFolders(effectiveUserId)
         list.push(newFolder)
-        localStorage.setItem(`folders_${userId}`, JSON.stringify(list))
+        localStorage.setItem(`folders_${effectiveUserId}`, JSON.stringify(list))
         return newFolder
       }
       return new Promise((resolve, reject) => {
@@ -396,17 +444,18 @@ export const noteStorage = {
    * Rinomina o sposta una cartella
    */
   async updateFolder(userId, folderId, { name, parentId } = {}) {
-    if (!userId || !folderId) return false
+    const effectiveUserId = userId || (typeof window !== 'undefined' && window.$nuxt?.$store?.state?.user?.user?.id) || 'default_user'
+    if (!folderId) return false
     try {
       const db = await openDB()
       if (!db) {
-        const list = await this.getUserFolders(userId)
-        const fld = list.find((f) => f.id === folderId && f.userId === userId)
+        const list = await this.getUserFolders(effectiveUserId)
+        const fld = list.find((f) => f.id === folderId)
         if (fld) {
           if (name !== undefined) fld.name = name.trim()
           if (parentId !== undefined) fld.parentId = parentId
           fld.updatedAt = Date.now()
-          localStorage.setItem(`folders_${userId}`, JSON.stringify(list))
+          localStorage.setItem(`folders_${effectiveUserId}`, JSON.stringify(list))
           return true
         }
         return false
@@ -417,9 +466,10 @@ export const noteStorage = {
         const req = store.get(folderId)
         req.onsuccess = () => {
           const item = req.result
-          if (item && item.userId === userId) {
+          if (item) {
             if (name !== undefined) item.name = name.trim()
             if (parentId !== undefined) item.parentId = parentId
+            item.userId = effectiveUserId
             item.updatedAt = Date.now()
             store.put(item)
             resolve(true)
@@ -439,23 +489,24 @@ export const noteStorage = {
    * Elimina una cartella e sposta le note al livello superiore
    */
   async deleteFolder(userId, folderId) {
-    if (!userId || !folderId) return false
+    const effectiveUserId = userId || (typeof window !== 'undefined' && window.$nuxt?.$store?.state?.user?.user?.id) || 'default_user'
+    if (!folderId) return false
     try {
-      await this.recordTombstone(userId, 'folder', folderId)
+      await this.recordTombstone(effectiveUserId, 'folder', folderId)
       const db = await openDB()
       if (!db) {
-        let flds = await this.getUserFolders(userId)
-        const target = flds.find((f) => f.id === folderId && f.userId === userId)
+        let flds = await this.getUserFolders(effectiveUserId)
+        const target = flds.find((f) => f.id === folderId)
         const parentId = target ? target.parentId : null
         flds = flds.filter((f) => f.id !== folderId)
-        localStorage.setItem(`folders_${userId}`, JSON.stringify(flds))
+        localStorage.setItem(`folders_${effectiveUserId}`, JSON.stringify(flds))
 
         // Ripristina note alla cartella genitore
-        const nbs = await this.getUserNotebooks(userId)
+        const nbs = await this.getUserNotebooks(effectiveUserId)
         nbs.forEach((nb) => {
           if (nb.folderId === folderId) nb.folderId = parentId
         })
-        localStorage.setItem(`notebooks_${userId}`, JSON.stringify(nbs))
+        localStorage.setItem(`notebooks_${effectiveUserId}`, JSON.stringify(nbs))
         return true
       }
       return new Promise((resolve, reject) => {
@@ -471,8 +522,7 @@ export const noteStorage = {
           fStore.delete(folderId)
 
           // Aggiorna taccuini contenuti
-          const nbIndex = nbStore.index('userId')
-          const nbReq = nbIndex.getAll(userId)
+          const nbReq = nbStore.getAll()
           nbReq.onsuccess = () => {
             const list = nbReq.result || []
             list.forEach((nb) => {
@@ -500,8 +550,9 @@ export const noteStorage = {
    * Salva un record di eliminazione (tombstone) per sincronizzazione
    */
   async recordTombstone(userId, type, id) {
-    if (!userId || !id) return
-    const record = { id, type, userId, isDeleted: true, updatedAt: Date.now() }
+    const effectiveUserId = userId || (typeof window !== 'undefined' && window.$nuxt?.$store?.state?.user?.user?.id) || 'default_user'
+    if (!id) return
+    const record = { id, type, userId: effectiveUserId, isDeleted: true, updatedAt: Date.now() }
     try {
       const db = await openDB()
       if (db && db.objectStoreNames.contains(STORE_TOMBSTONES)) {
@@ -512,10 +563,10 @@ export const noteStorage = {
           tx.onerror = () => resolve()
         })
       }
-      const raw = localStorage.getItem(`tombstones_${userId}`)
+      const raw = localStorage.getItem(`tombstones_${effectiveUserId}`)
       const list = raw ? JSON.parse(raw) : []
       list.push(record)
-      localStorage.setItem(`tombstones_${userId}`, JSON.stringify(list))
+      localStorage.setItem(`tombstones_${effectiveUserId}`, JSON.stringify(list))
     } catch (e) {
       console.warn('Errore salvataggio tombstone:', e)
     }
@@ -525,9 +576,9 @@ export const noteStorage = {
    * Recupera tutti i dati locali (notebooks, folders, note pages) per sync
    */
   async getAllLocalData(userId) {
-    if (!userId) return { notebooks: [], folders: [], notes: [] }
-    let notebooks = await this.getUserNotebooks(userId)
-    let folders = await this.getUserFolders(userId)
+    const effectiveUserId = userId || (typeof window !== 'undefined' && window.$nuxt?.$store?.state?.user?.user?.id) || 'default_user'
+    let notebooks = await this.getUserNotebooks(effectiveUserId)
+    let folders = await this.getUserFolders(effectiveUserId)
     let notes = []
     let tombstones = []
 
@@ -545,12 +596,12 @@ export const noteStorage = {
           tombstones = await new Promise((resolve) => {
             const tx = db.transaction(STORE_TOMBSTONES, 'readonly')
             const req = tx.objectStore(STORE_TOMBSTONES).getAll()
-            req.onsuccess = () => resolve((req.result || []).filter((t) => t.userId === userId))
+            req.onsuccess = () => resolve((req.result || []).filter((t) => t.userId === effectiveUserId))
             req.onerror = () => resolve([])
           })
         }
       } else {
-        const raw = localStorage.getItem(`tombstones_${userId}`)
+        const raw = localStorage.getItem(`tombstones_${effectiveUserId}`)
         tombstones = raw ? JSON.parse(raw) : []
       }
     } catch (e) {
@@ -573,15 +624,16 @@ export const noteStorage = {
    * Applica i dati sincronizzati dal server nel database locale
    */
   async applySyncedData(userId, syncedData) {
-    if (!userId || !syncedData) return
+    const effectiveUserId = userId || (typeof window !== 'undefined' && window.$nuxt?.$store?.state?.user?.user?.id) || 'default_user'
+    if (!syncedData) return
     const { notebooks = [], folders = [], notes = [] } = syncedData
 
     try {
       const db = await openDB()
       if (!db) {
-        localStorage.setItem(`notebooks_${userId}`, JSON.stringify(notebooks.filter((n) => !n.isDeleted && n.userId === userId)))
-        localStorage.setItem(`folders_${userId}`, JSON.stringify(folders.filter((f) => !f.isDeleted && f.userId === userId)))
-        localStorage.removeItem(`tombstones_${userId}`)
+        localStorage.setItem(`notebooks_${effectiveUserId}`, JSON.stringify(notebooks.filter((n) => !n.isDeleted)))
+        localStorage.setItem(`folders_${effectiveUserId}`, JSON.stringify(folders.filter((f) => !f.isDeleted)))
+        localStorage.removeItem(`tombstones_${effectiveUserId}`)
         return
       }
 
@@ -596,22 +648,18 @@ export const noteStorage = {
       tStore.clear()
 
       notebooks.forEach((nb) => {
-        if (nb.userId === userId) {
-          if (nb.isDeleted) {
-            nbStore.delete(nb.id)
-          } else {
-            nbStore.put(nb)
-          }
+        if (nb.isDeleted) {
+          nbStore.delete(nb.id)
+        } else {
+          nbStore.put({ ...nb, userId: effectiveUserId })
         }
       })
 
       folders.forEach((f) => {
-        if (f.userId === userId) {
-          if (f.isDeleted) {
-            fStore.delete(f.id)
-          } else {
-            fStore.put(f)
-          }
+        if (f.isDeleted) {
+          fStore.delete(f.id)
+        } else {
+          fStore.put({ ...f, userId: effectiveUserId })
         }
       })
 
@@ -636,22 +684,28 @@ export const noteStorage = {
    * Sincronizzazione a due vie con il server NAS
    */
   async syncWithServer(userId, apiClient) {
-    if (!userId || !apiClient) return { success: false, reason: 'missing_params' }
+    const effectiveUserId = userId || (typeof window !== 'undefined' && window.$nuxt?.$store?.state?.user?.user?.id) || 'default_user'
+    const client = apiClient || (typeof window !== 'undefined' && (window.$nuxt?.$nativeHttp || window.$nuxt?.$axios))
+    if (!client) return { success: false, reason: 'missing_client' }
+
     try {
-      const localData = await this.getAllLocalData(userId)
+      const localData = await this.getAllLocalData(effectiveUserId)
 
       let res
-      if (typeof apiClient.post === 'function') {
-        res = await apiClient.post('/api/me/notes-sync', localData)
-      } else if (typeof apiClient.$post === 'function') {
-        res = await apiClient.$post('/api/me/notes-sync', localData)
+      if (typeof client.post === 'function') {
+        res = await client.post('/api/me/notes-sync', localData)
+      } else if (typeof client.$post === 'function') {
+        res = await client.$post('/api/me/notes-sync', localData)
       } else {
         return { success: false, reason: 'unsupported_client' }
       }
 
       const responseData = res && res.data ? res.data : res
       if (responseData && (responseData.success || responseData.notebooks)) {
-        await this.applySyncedData(userId, responseData)
+        await this.applySyncedData(effectiveUserId, responseData)
+        if (typeof window !== 'undefined' && window.$nuxt?.$eventBus) {
+          window.$nuxt?.$eventBus.$emit('notes-synced', responseData)
+        }
         return { success: true, ...responseData }
       }
       return { success: false, reason: 'invalid_response' }
@@ -667,9 +721,6 @@ export const noteStorage = {
   async syncOfflineNotes(userId) {
     if (typeof window === 'undefined') return { success: false }
     const client = window.$nuxt?.$nativeHttp || window.$nuxt?.$axios
-    if (client) {
-      return this.syncWithServer(userId, client)
-    }
-    return { success: false, reason: 'no_client' }
+    return this.syncWithServer(userId, client)
   }
 }
