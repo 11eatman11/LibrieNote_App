@@ -82,9 +82,9 @@ export default {
       return this.libraryItem?.id || 'comic-doc'
     },
     isNotesEnabled() {
-      const libId = this.libraryItem?.libraryId || (this..state.selectedLibraryItem && this..state.selectedLibraryItem.libraryId)
+      const libId = this.libraryItem?.libraryId || (this.$state.selectedLibraryItem && this.$state.selectedLibraryItem.libraryId)
       if (!libId) return true
-      return this..getters['libraries/isLibraryNotesEnabled'](libId)
+      return this.$getters['libraries/isLibraryNotesEnabled'](libId)
     },
     userToken() {
       return this.$store.getters['user/getToken']
