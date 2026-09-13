@@ -685,17 +685,25 @@ export const noteStorage = {
    */
   async syncWithServer(userId, apiClient) {
     const effectiveUserId = userId || (typeof window !== 'undefined' && window.$nuxt?.$store?.state?.user?.user?.id) || 'default_user'
-    const client = apiClient || (typeof window !== 'undefined' && (window.$nuxt?.$nativeHttp || window.$nuxt?.$axios))
-    if (!client) return { success: false, reason: 'missing_client' }
+    const client = apiClient || (typeof window !== 'undefined' && (window.$nuxt?.$axios || window.$nuxt?.$nativeHttp))
+    if (!client) {
+      console.warn('[noteStorage] Nessun client HTTP disponibile per la sincronizzazione')
+      return { success: false, reason: 'missing_client' }
+    }
 
     try {
       const localData = await this.getAllLocalData(effectiveUserId)
+      const payload = {
+        userId: effectiveUserId,
+        ...localData
+      }
 
       let res
-      if (typeof client.post === 'function') {
-        res = await client.post('/api/me/notes-sync', localData)
-      } else if (typeof client.$post === 'function') {
-        res = await client.$post('/api/me/notes-sync', localData)
+      // In Nuxt, $axios.$post directly returns the response body
+      if (typeof client.$post === 'function') {
+        res = await client.$post('/api/me/notes-sync', payload)
+      } else if (typeof client.post === 'function') {
+        res = await client.post('/api/me/notes-sync', payload)
       } else {
         return { success: false, reason: 'unsupported_client' }
       }
@@ -718,7 +726,7 @@ export const noteStorage = {
       }
       return { success: false, reason: 'invalid_response', responseData }
     } catch (err) {
-      console.warn('Sincronizzazione note con NAS non riuscita (possibile modalità offline):', err)
+      console.warn('[noteStorage] Sincronizzazione note con NAS non riuscita (offline o endpoint non raggiungibile):', err)
       return { success: false, offline: true, error: err }
     }
   },
@@ -728,7 +736,7 @@ export const noteStorage = {
    */
   async syncOfflineNotes(userId) {
     if (typeof window === 'undefined') return { success: false }
-    const client = window.$nuxt?.$nativeHttp || window.$nuxt?.$axios
+    const client = window.$nuxt?.$axios || window.$nuxt?.$nativeHttp
     return this.syncWithServer(userId, client)
   }
 }
