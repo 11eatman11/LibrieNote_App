@@ -700,7 +700,15 @@ export const noteStorage = {
         return { success: false, reason: 'unsupported_client' }
       }
 
-      const responseData = res && res.data ? res.data : res
+      let responseData = res && res.data !== undefined ? res.data : res
+      if (typeof responseData === 'string') {
+        try {
+          responseData = JSON.parse(responseData)
+        } catch (e) {
+          console.warn('[noteStorage] JSON parse error on responseData:', e)
+        }
+      }
+
       if (responseData && (responseData.success || responseData.notebooks)) {
         await this.applySyncedData(effectiveUserId, responseData)
         if (typeof window !== 'undefined' && window.$nuxt?.$eventBus) {
@@ -708,7 +716,7 @@ export const noteStorage = {
         }
         return { success: true, ...responseData }
       }
-      return { success: false, reason: 'invalid_response' }
+      return { success: false, reason: 'invalid_response', responseData }
     } catch (err) {
       console.warn('Sincronizzazione note con NAS non riuscita (possibile modalità offline):', err)
       return { success: false, offline: true, error: err }
